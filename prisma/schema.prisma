@@ -1,0 +1,125 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  EDITOR
+}
+
+enum ProductStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+  CANCELLED
+}
+
+enum PaymentProvider {
+  ASAAS
+  STRIPE
+  MANUAL
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  role         UserRole @default(ADMIN)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  sessions     Session[]
+  auditLogs    AuditLog[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId, expiresAt])
+}
+
+model Product {
+  id                String        @id @default(cuid())
+  slug              String        @unique
+  name              String
+  description       String        @db.Text
+  priceCents        Int
+  currency          String        @default("BRL")
+  status            ProductStatus @default(DRAFT)
+  privateStorageKey String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  orders            Order[]
+  @@index([status, createdAt])
+}
+
+model Order {
+  id                    String          @id @default(cuid())
+  productId             String
+  customerEmail         String
+  amountCents           Int
+  currency              String          @default("BRL")
+  status                OrderStatus     @default(PENDING)
+  provider              PaymentProvider
+  providerCheckoutId    String?
+  providerPaymentId     String?
+  paidAt                DateTime?
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  product               Product         @relation(fields: [productId], references: [id], onDelete: Restrict)
+  paymentEvents         PaymentEvent[]
+  @@index([status, createdAt])
+  @@index([customerEmail])
+  @@unique([provider, providerPaymentId])
+}
+
+model PaymentEvent {
+  id             String          @id @default(cuid())
+  provider       PaymentProvider
+  eventId        String
+  eventType      String
+  orderId        String?
+  receivedAt     DateTime        @default(now())
+  processedAt    DateTime?
+  payload        Json
+  order           Order?          @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  @@unique([provider, eventId])
+  @@index([processedAt, receivedAt])
+}
+
+model DigitalDelivery {
+  id          String   @id @default(cuid())
+  orderId     String   @unique
+  tokenHash   String   @unique
+  expiresAt   DateTime
+  downloadCount Int    @default(0)
+  createdAt   DateTime @default(now())
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  action     String
+  entityType String
+  entityId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  @@index([entityType, entityId, createdAt])
+}
